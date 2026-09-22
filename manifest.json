@@ -7,7 +7,7 @@
   "theme_color": "#4f46e5",
   "icons": [
     {
-    "src": "[https://raw.githubusercontent.com/Arthurxim/OMNITIME/main/icone.png]",
+    "src": "https://raw.githubusercontent.com/Arthurxim/OMNITIME/main/icone.png",
       "sizes": "512x512",
       "type": "image/png"
     }
