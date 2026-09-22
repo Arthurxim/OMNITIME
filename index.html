@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="fr" class="h-full">
-<head><link rel="manifest" href="./manifest.json">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mon Planning Étudiant Intelligent</title>
@@ -98,7 +98,7 @@
                 <button onclick="changeDay(1)" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition"><i class="fa-solid fa-chevron-right"></i></button>
             </div>
 
-            <!-- Grille Semaine (Lundi à Vendredi, 8h-19h, 40px par tranche de 30 min) -->
+            <!-- Grille Semaine -->
             <div id="container-week" class="overflow-x-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
                 <div class="min-w-[850px] grid grid-cols-6 gap-2">
                     <div class="text-center font-bold text-slate-400 text-xs py-2">Horaires</div>
@@ -151,7 +151,20 @@
                 </button>
             </div>
 
+            <!-- Liste des tâches en cours -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="tasks-container"></div>
+
+            <!-- Section Repliable / Accordéon pour les Tâches Terminées -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mt-6">
+                <button onclick="toggleCompletedAccordion()" class="w-full px-5 py-4 flex justify-between items-center bg-slate-50 hover:bg-slate-100 transition text-left">
+                    <div class="flex items-center gap-2.5">
+                        <i class="fa-solid fa-check-double text-indigo-600"></i>
+                        <span class="font-bold text-slate-700 text-sm">Tâches terminées (<span id="completed-count">0</span>)</span>
+                    </div>
+                    <i id="completed-chevron" class="fa-solid fa-chevron-down text-slate-400 transition-transform duration-200"></i>
+                </button>
+                <div id="completed-tasks-container" class="hidden p-4 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            </div>
         </div>
 
         <div id="section-subjects" class="hidden space-y-6">
@@ -272,7 +285,6 @@
                     <input type="text" id="course-room" placeholder="Ex: Amphi A" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
 
-                <!-- Two Distinct Delete Buttons in Modal -->
                 <div id="modal-delete-section" class="hidden pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
                     <button type="button" onclick="deleteSingleInstance()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5">
                         <i class="fa-solid fa-trash"></i> cet événement
@@ -293,7 +305,7 @@
     <!-- Modal Tâche -->
     <div id="task-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs hidden z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
-            <h3 class="text-lg font-bold text-slate-800">Ajouter une tâche / devoir</h3>
+            <h3 id="task-modal-title" class="text-lg font-bold text-slate-800">Ajouter une tâche / devoir</h3>
             <form id="task-form" onsubmit="saveTask(event)" class="space-y-4">
                 <input type="hidden" id="task-id">
                 <div>
@@ -361,7 +373,7 @@
     </div>
 
     <script>
-        let appData = JSON.parse(localStorage.getItem('student_planner_data_v17')) || {
+        let appData = JSON.parse(localStorage.getItem('student_planner_data_v18')) || {
             subjects: [
                 { name: "Algèbre", color: "#4f46e5", autoTasks: ["Relire le cours", "Faire les exercices du TD"] },
                 { name: "Topologie", color: "#0ea5e9", autoTasks: ["Apprendre les définitions"] },
@@ -383,7 +395,7 @@
         };
 
         function saveData() {
-            localStorage.setItem('student_planner_data_v17', JSON.stringify(appData));
+            localStorage.setItem('student_planner_data_v18', JSON.stringify(appData));
             renderAll();
         }
 
@@ -391,6 +403,7 @@
         let edtView = 'week';
         let currentMondayDate = getMonday(new Date());
         let currentDayDate = new Date();
+        let completedAccordionOpen = false;
 
         function getMonday(d) {
             d = new Date(d);
@@ -420,7 +433,6 @@
             return new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
         }
 
-        // Jours Fériés France
         function getEasterSunday(year) {
             let a = year % 19, b = Math.floor(year / 100), c = year % 100,
                 d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25),
@@ -589,13 +601,14 @@
             return expanded.sort((a,b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
         }
 
-        // Tâches automatiques post-cours : générées uniquement APRÈS qu'un cours soit passé, et assignées à la date du PROCHAIN cours
+        // Tâches automatiques post-cours : déclenchement précis dès la première minute après la fin du cours (ex: fin 9h30 -> ajout à 9h31)
         function syncAutoTasks() {
             let allCourses = getExpandedCourses().filter(c => c.type !== 'Vacances' && c.type !== 'Stage');
-            let todayStr = formatDateISO(new Date());
+            let now = new Date();
+            let todayStr = formatDateISO(now);
+            let currentMinutes = now.getHours() * 60 + now.getMinutes();
             let autoTaskIds = new Set();
 
-            // Regrouper les cours par matière triés par date
             let coursesBySubject = {};
             allCourses.forEach(c => {
                 if (!coursesBySubject[c.subject]) coursesBySubject[c.subject] = [];
@@ -608,14 +621,26 @@
                 let cList = coursesBySubject[subjName];
 
                 for (let i = 0; i < cList.length; i++) {
-                    let pastCourse = cList[i];
-                    // Vérifier si ce cours est passé
-                    if (pastCourse.date < todayStr) {
-                        // Trouver le prochain cours après ce cours passé
-                        let nextCourse = cList[i + 1] || pastCourse; // S'il n'y a pas de futur, le mettre sur lui-même ou le dernier
+                    let course = cList[i];
+                    let isPassed = false;
+
+                    if (course.date < todayStr) {
+                        isPassed = true;
+                    } else if (course.date === todayStr) {
+                        let [startH, startM] = course.start.split(':').map(Number);
+                        let durationMin = (course.duration || 1.5) * 60;
+                        let endTotalMin = startH * 60 + startM + durationMin;
+                        // Dès la première minute après la fin du cours (currentMinutes >= endTotalMin)
+                        if (currentMinutes >= endTotalMin) {
+                            isPassed = true;
+                        }
+                    }
+
+                    if (isPassed) {
+                        let nextCourse = cList[i + 1] || course;
 
                         subj.autoTasks.forEach(taskTitle => {
-                            let autoId = `auto_${pastCourse.uniqueInstanceId}_${taskTitle}`;
+                            let autoId = `auto_${course.uniqueInstanceId}_${taskTitle}`;
                             autoTaskIds.add(autoId);
 
                             let existingTask = appData.tasks.find(t => t.id === autoId);
@@ -624,13 +649,12 @@
                                     id: autoId,
                                     subject: subjName,
                                     title: `[Auto] ${taskTitle} (${subjName})`,
-                                    date: nextCourse.date, // Date du prochain cours
+                                    date: nextCourse.date,
                                     priority: 'normal',
                                     completed: false,
                                     isAuto: true
                                 });
                             } else {
-                                // Mettre à jour la date cible sur le prochain cours si elle a changé
                                 existingTask.date = nextCourse.date;
                             }
                         });
@@ -638,7 +662,6 @@
                 }
             });
 
-            // Supprimer les tâches auto obsolètes
             appData.tasks = appData.tasks.filter(t => !t.isAuto || autoTaskIds.has(t.id));
         }
 
@@ -783,49 +806,84 @@
             }
         }
 
+        // Streaming/Rendering tasks with separate completed accordion and full edit/delete support for ALL tasks
         function renderTasks() {
             const container = document.getElementById('tasks-container');
+            const completedContainer = document.getElementById('completed-tasks-container');
             const filterSubj = document.getElementById('filter-task-subject').value;
             container.innerHTML = '';
+            completedContainer.innerHTML = '';
 
             let filteredTasks = appData.tasks;
             if (filterSubj) { filteredTasks = filteredTasks.filter(t => t.subject === filterSubj); }
             filteredTasks.sort((a,b) => (a.date || '').localeCompare(b.date || ''));
 
+            let pendingTasks = filteredTasks.filter(t => !t.completed);
+            let completedTasks = filteredTasks.filter(t => t.completed);
+
+            document.getElementById('completed-count').textContent = completedTasks.length;
+
             const totalTasks = appData.tasks.length;
-            const completedTasks = appData.tasks.filter(t => t.completed).length;
-            const globalPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+            const completedCountTotal = appData.tasks.filter(t => t.completed).length;
+            const globalPercent = totalTasks > 0 ? Math.round((completedCountTotal / totalTasks) * 100) : 0;
             document.getElementById('global-progress-bar').style.width = `${globalPercent}%`;
             document.getElementById('global-progress-text').textContent = `${globalPercent}%`;
 
-            if (filteredTasks.length === 0) {
-                container.innerHTML = `<div class="col-span-2 text-center py-8 text-slate-400 text-sm">Aucune tâche enregistrée.</div>`;
-                return;
+            if (pendingTasks.length === 0) {
+                container.innerHTML = `<div class="col-span-2 text-center py-8 text-slate-400 text-sm">Aucune tâche en cours.</div>`;
+            } else {
+                pendingTasks.forEach(task => {
+                    container.appendChild(createTaskCard(task));
+                });
             }
 
-            filteredTasks.forEach(task => {
-                const subj = appData.subjects.find(s => s.name === task.subject);
-                const color = subj ? subj.color : '#4f46e5';
-                const el = document.createElement('div');
-                el.className = `bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between gap-3 relative overflow-hidden`;
-                el.innerHTML = `
-                    <div class="absolute left-0 top-0 bottom-0 w-2" style="background-color: ${color};"></div>
-                    <div class="flex items-center gap-3 pl-2 flex-1">
-                        <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded accent-indigo-600 cursor-pointer">
-                        <div>
-                            <h4 class="text-sm font-semibold ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}">${task.title}</h4>
-                            <div class="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
-                                <span class="font-medium px-2 py-0.5 rounded-full text-white" style="background-color: ${color};">${task.subject}</span>
-                                ${task.date ? `<span><i class="fa-regular fa-calendar mr-1"></i>Pour le ${task.date}</span>` : ''}
-                                ${task.isAuto ? '<span class="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium"><i class="fa-solid fa-robot mr-1"></i>Post-cours</span>' : ''}
-                                ${task.priority === 'high' ? '<span class="text-rose-600 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Urgente</span>' : ''}
-                            </div>
+            if (completedTasks.length === 0) {
+                completedContainer.innerHTML = `<div class="col-span-2 text-center py-4 text-slate-400 text-xs italic">Aucune tâche terminée.</div>`;
+            } else {
+                completedTasks.forEach(task => {
+                    completedContainer.appendChild(createTaskCard(task));
+                });
+            }
+        }
+
+        function createTaskCard(task) {
+            const subj = appData.subjects.find(s => s.name === task.subject);
+            const color = subj ? subj.color : '#4f46e5';
+            const el = document.createElement('div');
+            el.className = `bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between gap-3 relative overflow-hidden`;
+            el.innerHTML = `
+                <div class="absolute left-0 top-0 bottom-0 w-2" style="background-color: ${color};"></div>
+                <div class="flex items-center gap-3 pl-2 flex-1">
+                    <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded accent-indigo-600 cursor-pointer">
+                    <div>
+                        <h4 class="text-sm font-semibold ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}">${task.title}</h4>
+                        <div class="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
+                            <span class="font-medium px-2 py-0.5 rounded-full text-white" style="background-color: ${color};">${task.subject}</span>
+                            ${task.date ? `<span><i class="fa-regular fa-calendar mr-1"></i>Pour le ${task.date}</span>` : ''}
+                            ${task.isAuto ? '<span class="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium"><i class="fa-solid fa-robot mr-1"></i>Post-cours</span>' : ''}
+                            ${task.priority === 'high' ? '<span class="text-rose-600 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Urgente</span>' : ''}
                         </div>
                     </div>
-                    <button onclick="deleteTask('${task.id}')" class="text-slate-400 hover:text-rose-600 p-2 transition"><i class="fa-solid fa-trash"></i></button>
-                `;
-                container.appendChild(el);
-            });
+                </div>
+                <div class="flex items-center gap-1">
+                    <button onclick="editTask('${task.id}')" class="text-slate-400 hover:text-indigo-600 p-2 transition" title="Modifier"><i class="fa-solid fa-pen text-xs"></i></button>
+                    <button onclick="deleteTask('${task.id}')" class="text-slate-400 hover:text-rose-600 p-2 transition" title="Supprimer"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            `;
+            return el;
+        }
+
+        function toggleCompletedAccordion() {
+            completedAccordionOpen = !completedAccordionOpen;
+            const container = document.getElementById('completed-tasks-container');
+            const chevron = document.getElementById('completed-chevron');
+            if (completedAccordionOpen) {
+                container.classList.remove('hidden');
+                chevron.classList.add('rotate-180');
+            } else {
+                container.classList.add('hidden');
+                chevron.classList.remove('rotate-180');
+            }
         }
 
         function renderSubjects() {
@@ -1146,8 +1204,23 @@
 
         function openTaskModal() {
             document.getElementById('task-form').reset();
+            document.getElementById('task-id').value = '';
+            document.getElementById('task-modal-title').textContent = "Ajouter une tâche / devoir";
             const firstSubject = document.getElementById('task-subject').value;
             document.getElementById('task-date').value = firstSubject ? findNextCourseDate(firstSubject) : formatDateISO(new Date());
+            document.getElementById('task-modal').classList.remove('hidden');
+        }
+
+        function editTask(id) {
+            const task = appData.tasks.find(t => t.id === id);
+            if (!task) return;
+            document.getElementById('task-form').reset();
+            document.getElementById('task-id').value = task.id;
+            document.getElementById('task-modal-title').textContent = "Modifier la tâche / devoir";
+            document.getElementById('task-subject').value = task.subject;
+            document.getElementById('task-title').value = task.title.replace(/^\[Auto\]\s*/, '');
+            document.getElementById('task-date').value = task.date || formatDateISO(new Date());
+            document.getElementById('task-priority').value = task.priority || 'normal';
             document.getElementById('task-modal').classList.remove('hidden');
         }
 
@@ -1246,16 +1319,32 @@
 
         function saveTask(e) {
             e.preventDefault();
-            const task = {
-                id: 't_' + Date.now(),
-                subject: document.getElementById('task-subject').value,
-                title: document.getElementById('task-title').value,
-                date: document.getElementById('task-date').value,
-                priority: document.getElementById('task-priority').value,
-                completed: false,
-                isAuto: false
-            };
-            appData.tasks.push(task);
+            const taskId = document.getElementById('task-id').value;
+            const subject = document.getElementById('task-subject').value;
+            const title = document.getElementById('task-title').value;
+            const date = document.getElementById('task-date').value;
+            const priority = document.getElementById('task-priority').value;
+
+            if (taskId) {
+                const task = appData.tasks.find(t => t.id === taskId);
+                if (task) {
+                    task.subject = subject;
+                    task.title = task.isAuto && !title.startsWith('[Auto]') ? `[Auto] ${title}` : title;
+                    task.date = date;
+                    task.priority = priority;
+                }
+            } else {
+                const task = {
+                    id: 't_' + Date.now(),
+                    subject: subject,
+                    title: title,
+                    date: date,
+                    priority: priority,
+                    completed: false,
+                    isAuto: false
+                };
+                appData.tasks.push(task);
+            }
             saveData();
             closeModal('task-modal');
         }
@@ -1334,16 +1423,3 @@
         function renderAll() {
             updateSelects();
             renderEdt();
-            renderTasks();
-            renderSubjects();
-            renderSettings();
-        }
-
-        generateTimeSlots();
-        populateTimeSelect();
-        updateDayLabel();
-        checkNotificationsStatus();
-        renderAll();
-    </script>
-</body>
-</html>
