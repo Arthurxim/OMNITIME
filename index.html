@@ -1423,3 +1423,22 @@
         function renderAll() {
             updateSelects();
             renderEdt();
+            renderTasks();
+            renderSubjects();
+            renderSettings();
+        }
+
+        generateTimeSlots();
+        populateTimeSelect();
+        updateDayLabel();
+        checkNotificationsStatus();
+        renderAll();
+
+        // Vérification continue toutes les 30 secondes pour déclencher instantanément les tâches auto post-cours
+        setInterval(() => {
+            syncAutoTasks();
+            renderTasks();
+        }, 30000);
+    </script>
+</body>
+</html>
