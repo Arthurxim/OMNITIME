@@ -1,11 +1,15 @@
 {
-  "background_color": "#ffffff",
-  "dir": "ltr",
-  "display": "standalone",
   "name": "OMNITIME",
-  "orientation": "any",
-  "scope": "/",
   "short_name": "OMNITIME",
   "start_url": "./index.html",
-  "theme_color": "#ffffff"
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3652/3652191.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }
