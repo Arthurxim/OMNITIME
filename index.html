@@ -151,10 +151,10 @@
                 </button>
             </div>
 
-            <!-- Liste des tâches en cours -->
+            <!-- Tâches en cours -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="tasks-container"></div>
 
-            <!-- Section Repliable / Accordéon pour les Tâches Terminées -->
+            <!-- Accordéon des tâches terminées -->
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mt-6">
                 <button onclick="toggleCompletedAccordion()" class="w-full px-5 py-4 flex justify-between items-center bg-slate-50 hover:bg-slate-100 transition text-left">
                     <div class="flex items-center gap-2.5">
@@ -373,7 +373,7 @@
     </div>
 
     <script>
-        let appData = JSON.parse(localStorage.getItem('student_planner_data_v18')) || {
+        let appData = JSON.parse(localStorage.getItem('student_planner_data_v19')) || {
             subjects: [
                 { name: "Algèbre", color: "#4f46e5", autoTasks: ["Relire le cours", "Faire les exercices du TD"] },
                 { name: "Topologie", color: "#0ea5e9", autoTasks: ["Apprendre les définitions"] },
@@ -395,7 +395,7 @@
         };
 
         function saveData() {
-            localStorage.setItem('student_planner_data_v18', JSON.stringify(appData));
+            localStorage.setItem('student_planner_data_v19', JSON.stringify(appData));
             renderAll();
         }
 
@@ -601,7 +601,7 @@
             return expanded.sort((a,b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
         }
 
-        // Tâches automatiques post-cours : déclenchement précis dès la première minute après la fin du cours (ex: fin 9h30 -> ajout à 9h31)
+        // Tâches automatiques post-cours : dès la première minute après la fin du cours (ex: fin 9h30 -> ajout à 9h31)
         function syncAutoTasks() {
             let allCourses = getExpandedCourses().filter(c => c.type !== 'Vacances' && c.type !== 'Stage');
             let now = new Date();
@@ -630,7 +630,6 @@
                         let [startH, startM] = course.start.split(':').map(Number);
                         let durationMin = (course.duration || 1.5) * 60;
                         let endTotalMin = startH * 60 + startM + durationMin;
-                        // Dès la première minute après la fin du cours (currentMinutes >= endTotalMin)
                         if (currentMinutes >= endTotalMin) {
                             isPassed = true;
                         }
@@ -806,7 +805,7 @@
             }
         }
 
-        // Streaming/Rendering tasks with separate completed accordion and full edit/delete support for ALL tasks
+        // Rendu des tâches avec accordéon pour les terminées et modification/suppression complète pour TOUTES les tâches
         function renderTasks() {
             const container = document.getElementById('tasks-container');
             const completedContainer = document.getElementById('completed-tasks-container');
@@ -1218,7 +1217,7 @@
             document.getElementById('task-id').value = task.id;
             document.getElementById('task-modal-title').textContent = "Modifier la tâche / devoir";
             document.getElementById('task-subject').value = task.subject;
-            document.getElementById('task-title').value = task.title.replace(/^\[Auto\]\s*/, '');
+            document.getElementById('task-title').value = task.title.replace(/^\[Auto\]\s*/, '').replace(/\s*\([^)]+\)$/, '');
             document.getElementById('task-date').value = task.date || formatDateISO(new Date());
             document.getElementById('task-priority').value = task.priority || 'normal';
             document.getElementById('task-modal').classList.remove('hidden');
@@ -1329,7 +1328,7 @@
                 const task = appData.tasks.find(t => t.id === taskId);
                 if (task) {
                     task.subject = subject;
-                    task.title = task.isAuto && !title.startsWith('[Auto]') ? `[Auto] ${title}` : title;
+                    task.title = task.isAuto ? `[Auto] ${title} (${subject})` : title;
                     task.date = date;
                     task.priority = priority;
                 }
