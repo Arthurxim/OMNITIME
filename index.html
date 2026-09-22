@@ -106,7 +106,7 @@
                 <button onclick="changeDay(1)" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition"><i class="fa-solid fa-chevron-right"></i></button>
             </div>
 
-            <!-- Grille Semaine (Lundi à Vendredi, 8h-19h, 40px par tranche de 30 min) -->
+            <!-- Grille Semaine -->
             <div id="container-week" class="overflow-x-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
                 <div class="min-w-[850px] grid grid-cols-6 gap-2">
                     <div class="text-center font-bold text-slate-400 text-xs py-2">Horaires</div>
@@ -153,18 +153,25 @@
                     <select id="filter-task-subject" onchange="renderTasks()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <option value="">Toutes les matières</option>
                     </select>
-                    <select id="filter-task-status" onchange="renderTasks()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option value="all">Toutes les tâches</option>
-                        <option value="active">En cours uniquement</option>
-                        <option value="completed">Terminées uniquement</option>
-                    </select>
                 </div>
                 <button onclick="openTaskModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2 shadow-sm">
                     <i class="fa-solid fa-plus"></i> Ajouter une tâche
                 </button>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="tasks-container"></div>
+            <!-- Liste des tâches en cours -->
+            <div class="space-y-3" id="tasks-container"></div>
+
+            <!-- Menu déroulant (Accordéon) pour les tâches terminées -->
+            <div id="completed-section" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hidden">
+                <button onclick="toggleCompletedDropdown()" class="w-full px-5 py-3.5 flex justify-between items-center bg-slate-50 hover:bg-slate-100 transition text-left">
+                    <span class="text-xs font-bold text-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-check-double text-emerald-600"></i> Tâches terminées (<span id="completed-count">0</span>)
+                    </span>
+                    <i id="completed-arrow" class="fa-solid fa-chevron-down text-xs text-slate-400 transition-transform"></i>
+                </button>
+                <div id="completed-tasks-container" class="p-4 space-y-3 border-t border-slate-100 hidden"></div>
+            </div>
         </div>
 
         <div id="section-subjects" class="hidden space-y-6">
@@ -812,59 +819,84 @@
 
         function renderTasks() {
             const container = document.getElementById('tasks-container');
+            const completedContainer = document.getElementById('completed-tasks-container');
+            const completedSection = document.getElementById('completed-section');
+            const completedCount = document.getElementById('completed-count');
             const filterSubj = document.getElementById('filter-task-subject').value;
-            const filterStatus = document.getElementById('filter-task-status').value;
+            
             container.innerHTML = '';
+            completedContainer.innerHTML = '';
 
             let filteredTasks = appData.tasks;
             if (filterSubj) { 
                 filteredTasks = filteredTasks.filter(t => t.subject === filterSubj); 
             }
-            if (filterStatus === 'active') {
-                filteredTasks = filteredTasks.filter(t => !t.completed);
-            } else if (filterStatus === 'completed') {
-                filteredTasks = filteredTasks.filter(t => t.completed);
-            }
 
             filteredTasks.sort((a,b) => (a.date || '').localeCompare(b.date || ''));
 
+            let activeTasks = filteredTasks.filter(t => !t.completed);
+            let completedTasks = filteredTasks.filter(t => t.completed);
+
+            // Barre de progression globale
             const totalTasks = appData.tasks.length;
-            const completedTasks = appData.tasks.filter(t => t.completed).length;
-            const globalPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+            const totalCompleted = appData.tasks.filter(t => t.completed).length;
+            const globalPercent = totalTasks > 0 ? Math.round((totalCompleted / totalTasks) * 100) : 0;
             document.getElementById('global-progress-bar').style.width = `${globalPercent}%`;
             document.getElementById('global-progress-text').textContent = `${globalPercent}%`;
 
-            if (filteredTasks.length === 0) {
-                container.innerHTML = `<div class="col-span-2 text-center py-8 text-slate-400 text-sm">Aucune tâche correspondante.</div>`;
-                return;
+            // Rendu des tâches en cours
+            if (activeTasks.length === 0) {
+                container.innerHTML = `<div class="text-center py-6 text-slate-400 text-sm bg-white rounded-2xl border border-slate-200">Aucune tâche en cours.</div>`;
+            } else {
+                activeTasks.forEach(task => {
+                    container.appendChild(createTaskCard(task));
+                });
             }
 
-            filteredTasks.forEach(task => {
-                const subj = appData.subjects.find(s => s.name === task.subject);
-                const color = subj ? subj.color : '#4f46e5';
-                const el = document.createElement('div');
-                el.className = `bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between gap-3 relative overflow-hidden`;
-                el.innerHTML = `
-                    <div class="absolute left-0 top-0 bottom-0 w-2" style="background-color: ${color};"></div>
-                    <div class="flex items-center gap-3 pl-2 flex-1">
-                        <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded accent-indigo-600 cursor-pointer">
-                        <div class="cursor-pointer flex-1" onclick="openTaskModal('${task.id}')">
-                            <h4 class="text-sm font-semibold ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}">${task.title}</h4>
-                            <div class="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
-                                <span class="font-medium px-2 py-0.5 rounded-full text-white" style="background-color: ${color};">${task.subject}</span>
-                                ${task.date ? `<span><i class="fa-regular fa-calendar mr-1"></i>Pour le ${task.date}</span>` : ''}
-                                ${task.isAuto ? '<span class="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium"><i class="fa-solid fa-robot mr-1"></i>Post-cours</span>' : ''}
-                                ${task.priority === 'high' ? '<span class="text-rose-600 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Urgente</span>' : ''}
-                            </div>
+            // Gestion du menu déroulant des tâches terminées
+            if (completedTasks.length > 0) {
+                completedSection.classList.remove('hidden');
+                completedCount.textContent = completedTasks.length;
+                completedTasks.forEach(task => {
+                    completedContainer.appendChild(createTaskCard(task));
+                });
+            } else {
+                completedSection.classList.add('hidden');
+            }
+        }
+
+        function createTaskCard(task) {
+            const subj = appData.subjects.find(s => s.name === task.subject);
+            const color = subj ? subj.color : '#4f46e5';
+            const el = document.createElement('div');
+            el.className = `bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between gap-3 relative overflow-hidden`;
+            el.innerHTML = `
+                <div class="absolute left-0 top-0 bottom-0 w-2" style="background-color: ${color};"></div>
+                <div class="flex items-center gap-3 pl-2 flex-1">
+                    <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded accent-indigo-600 cursor-pointer">
+                    <div class="cursor-pointer flex-1" onclick="openTaskModal('${task.id}')">
+                        <h4 class="text-sm font-semibold ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}">${task.title}</h4>
+                        <div class="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
+                            <span class="font-medium px-2 py-0.5 rounded-full text-white" style="background-color: ${color};">${task.subject}</span>
+                            ${task.date ? `<span><i class="fa-regular fa-calendar mr-1"></i>Pour le ${task.date}</span>` : ''}
+                            ${task.isAuto ? '<span class="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium"><i class="fa-solid fa-robot mr-1"></i>Post-cours</span>' : ''}
+                            ${task.priority === 'high' ? '<span class="text-rose-600 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Urgente</span>' : ''}
                         </div>
                     </div>
-                    <div class="flex items-center gap-1">
-                        <button onclick="openTaskModal('${task.id}')" class="text-slate-400 hover:text-indigo-600 p-2 transition" title="Modifier"><i class="fa-solid fa-pen"></i></button>
-                        <button onclick="deleteTask('${task.id}')" class="text-slate-400 hover:text-rose-600 p-2 transition" title="Supprimer"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                `;
-                container.appendChild(el);
-            });
+                </div>
+                <div class="flex items-center gap-1">
+                    <button onclick="openTaskModal('${task.id}')" class="text-slate-400 hover:text-indigo-600 p-2 transition" title="Modifier"><i class="fa-solid fa-pen"></i></button>
+                    <button onclick="deleteTask('${task.id}')" class="text-slate-400 hover:text-rose-600 p-2 transition" title="Supprimer"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            `;
+            return el;
+        }
+
+        function toggleCompletedDropdown() {
+            const container = document.getElementById('completed-tasks-container');
+            const arrow = document.getElementById('completed-arrow');
+            container.classList.toggle('hidden');
+            arrow.classList.toggle('rotate-180');
         }
 
         function renderSubjects() {
